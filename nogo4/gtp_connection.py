@@ -299,19 +299,7 @@ class GtpConnection():
     def gogui_rules_board_size_cmd(self, args):
         self.respond(str(self.board.size))
     
-    def legal_moves_cmd(self, args):
-        """
-            List legal moves for color args[0] in {'b','w'}
-            """
-        board_color = args[0].lower()
-        color = color_to_int(board_color)
-        moves = GoBoardUtil.generate_legal_moves(self.board, color)
-        gtp_moves = []
-        for move in moves:
-            coords = point_to_coord(move, self.board.size)
-            gtp_moves.append(format_point(coords))
-        sorted_moves = ' '.join(sorted(gtp_moves))
-        self.respond(sorted_moves)
+   
 
     def gogui_rules_legal_moves_cmd(self, args):
         empties = self.board.get_empty_points()

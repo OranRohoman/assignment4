@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+#/usr/local/bin/python3
 import pexpect
 
 player1='nogo4/nogo4.py'
@@ -51,6 +53,7 @@ def playSingleGame(alternative=False):
                 break
             playMove(p2,'b',move)
             playMove(ob,'b',move)
+            
         else:
             move=getMove(p2,'w')
             assert(move!='pass')
@@ -64,7 +67,7 @@ def playSingleGame(alternative=False):
             playMove(p1,'w',move)
             playMove(ob,'w',move)
         sw=1-sw
-        print(move)
+        #print(move)
         ob.sendline('gogui-rules_final_result')
         ob.expect(['= black','= white','= unknown'])
         status=ob.after.decode("utf-8")[2:]

@@ -18,6 +18,7 @@ class NoGoRandom():
         self.version = 1.0
         
     def get_move(self, board, color):
+        print("get random move")
         return GoBoardUtil.generate_random_move(board, color)
     
 def run():
