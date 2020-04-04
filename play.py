@@ -3,7 +3,7 @@
 import pexpect
 
 player1='nogo4/nogo4.py'
-player2='random_player/nogo_random.py' 
+player2='flat_mc_player/nogo_flat_mc.py'
 
 win1=0
 win2=0

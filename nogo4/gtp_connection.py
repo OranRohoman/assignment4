@@ -8,11 +8,15 @@ at the University of Edinburgh.
 """
 import traceback
 from sys import stdin, stdout, stderr
-from board_util import GoBoardUtil, BLACK, WHITE, EMPTY, BORDER, \
+from board_util import GoBoardUtil, BLACK, WHITE, EMPTY, BORDER, PASS, \
                        MAXSIZE, coord_to_point
 import numpy as np
 import re
+import sys
+from ucb import runUcb
+import random
 import signal
+
 
 class GtpConnection():
 
@@ -30,6 +34,10 @@ class GtpConnection():
         self._debug_mode = debug_mode
         self.go_engine = go_engine
         self.board = board
+        self.N = 10
+        self.random = False
+        self.round_robin = False
+        self.weights = self.parseWeights()
         signal.signal(signal.SIGALRM, self.handler)
         self.commands = {
             "protocol_version": self.protocol_version_cmd,
@@ -54,10 +62,10 @@ class GtpConnection():
             "gogui-analyze_commands": self.gogui_analyze_cmd,
             "timelimit": self.timelimit_cmd
         }
-        self.timelimit = 30 
+        self.timelimit = 30
 
         # used for argument checking
-        # values: (required number of arguments, 
+        # values: (required number of arguments,
         #          error message on argnum failure)
         self.argmap = {
             "boardsize": (1, 'Usage: boardsize INT'),
@@ -67,7 +75,7 @@ class GtpConnection():
             "play": (2, 'Usage: play {b,w} MOVE'),
             "legal_moves": (1, 'Usage: legal_moves {w,b}')
         }
-    
+
     def timelimit_cmd(self, args):
         self.timelimit = args[0]
         self.respond('')
@@ -77,14 +85,14 @@ class GtpConnection():
         raise Exception("unknown")
 
     def write(self, data):
-        stdout.write(data) 
+        stdout.write(data)
 
     def flush(self):
         stdout.flush()
 
     def start_connection(self):
         """
-        Start a GTP connection. 
+        Start a GTP connection.
         This function continuously monitors standard input for commands.
         """
         line = stdin.readline()
@@ -107,7 +115,8 @@ class GtpConnection():
         elements = command.split()
         if not elements:
             return
-        command_name = elements[0]; args = elements[1:]
+        command_name = elements[0];
+        args = elements[1:]
         if self.has_arg_error(command_name, len(args)):
             return
         if command_name in self.commands:
@@ -157,7 +166,7 @@ class GtpConnection():
 
     def board2d(self):
         return str(GoBoardUtil.get_twoD_board(self.board))
-        
+
     def protocol_version_cmd(self, args):
         """ Return the GTP protocol version being used (always 2) """
         self.respond('2')
@@ -257,33 +266,29 @@ class GtpConnection():
 
     def genmove_cmd(self, args):
         """
-        Generate a move for the color args[0] in {'b', 'w'}, for the game of nogo.
+        Generate a move for the color args[0] in {'b', 'w'}, for the game of gomoku.
         """
         board_color = args[0].lower()
         color = color_to_int(board_color)
-        assert color == self.board.current_player
 
-        # check if the game ends
-        legal_moves = GoBoardUtil.generate_legal_moves(self.board, self.board.current_player)
-        if not legal_moves:
-            self.respond("resign")
-            self.board.current_player = GoBoardUtil.opponent(self.board.current_player)
-            return 
 
-        move = None
         try:
             signal.alarm(int(self.timelimit))
             self.sboard = self.board.copy()
-            move = self.go_engine.get_move(self.board, color)
+            move = self.get_move(self.board, color, self.round_robin, self.random, self.N)
             self.board=self.sboard
             signal.alarm(0)
         except Exception as e:
-            move=self.go_engine.best_move
+            # TODO fix this to give the best move we can find
+            self.respond("OUT OF TIME")
+            #move=self.go_engine.best_move
+            move = None
 
         if move is None:
             self.respond("resign")
             self.board.current_player = GoBoardUtil.opponent(self.board.current_player)
-            return 
+            return
+      
 
         move_coord = point_to_coord(move, self.board.size)
         move_as_string = format_point(move_coord)
@@ -298,20 +303,7 @@ class GtpConnection():
     
     def gogui_rules_board_size_cmd(self, args):
         self.respond(str(self.board.size))
-    
-    def legal_moves_cmd(self, args):
-        """
-            List legal moves for color args[0] in {'b','w'}
-            """
-        board_color = args[0].lower()
-        color = color_to_int(board_color)
-        moves = GoBoardUtil.generate_legal_moves(self.board, color)
-        gtp_moves = []
-        for move in moves:
-            coords = point_to_coord(move, self.board.size)
-            gtp_moves.append(format_point(coords))
-        sorted_moves = ' '.join(sorted(gtp_moves))
-        self.respond(sorted_moves)
+
 
     def gogui_rules_legal_moves_cmd(self, args):
         empties = self.board.get_empty_points()
@@ -371,14 +363,242 @@ class GtpConnection():
                      "pstring/Rules GameID/gogui-rules_game_id\n"
                      "pstring/Show Board/gogui-rules_board\n"
                      )
+    
+    def set_policy(self,args):
+        if(len(args) != 0):
+            if(args[0] == "random"):
+                self.random = True
+            if(args[0] == "pattern"):
+                self.random = False
+            self.respond()
+
+    def set_selection(self,args):
+        if(len(args) != 0):
+            if(args[0] == "rr"):
+                self.round_robin = True
+            if(args[0] == "ucb"):
+                self.round_robin = False
+            self.respond()
+
+    def get_policy_moves(self, args):
+        moveWeights = []
+        if (not self.random):
+            moveWeights = self.getPatternMoveProbabilities(self.board, self.board.current_player)
+        else:
+            moveWeights = self.get_random_move_prob(self.board,self.board.current_player)
+        
+        self.respond(str(moveWeights))
+
+
+    def set_N(self,args):
+        if(len(args) >0):
+            self.N = int(args[0])
+
+        self.respond()
+
+    def parseWeights(self):
+        '''
+        Parse weights in the file
+        :return: A dictionary of the weights
+        :rtype: Dictionary
+        '''
+        try:
+            with open('nogo4/weights') as weights:
+                lines = weights.readlines()
+        except:
+            with open('weights') as weights:
+                lines = weights.readlines()
+
+        weightDict = {}
+
+        for line in lines:
+            line.replace("\n", "")
+            lineVals = line.split(" ")
+            weightDict[int(lineVals[0])] = float(lineVals[1])
+
+        return weightDict
+    def get_random_move_prob(self,state,toPlay):
+        legal_moves = GoBoardUtil.generate_legal_moves(state,toPlay)
+        moves = []
+        for move in legal_moves:
+            moves.append(format_point(point_to_coord(move,self.board.size)))
+        prob = str(round(1/len(legal_moves),3))
+        moves.sort()
+        probs = [prob] * len(legal_moves)
+        return "" + " ".join(moves + probs) 
+        
+
+
+    def getPatternMoveProbabilities(self, state, toPlay):
+        weightDict = self.getPatternMoveWeights(state, toPlay)
+
+        # Return empty array if the policy has no options
+        if (len(weightDict) == 0):
+            return []
+
+        weightSum = 0
+        probabilities = {}
+
+        for weight in weightDict:
+            weightSum += weightDict.get(weight)
+
+        # Calculate the probability of each move
+        for weight in weightDict:
+            probabilities[format_point(point_to_coord(weight, self.board.size))] = (weightDict.get(weight) / weightSum)
+
+
+        moves = []
+        probs = []
+        for move in sorted(probabilities.items()):
+            moves.append(move[0])
+            probs.append(str(round(probabilities.get(move[0]), 3)))
+
+        return "" + " ".join(moves + probs) 
+
+
+    def getPatternMoveWeights(self, state, toPlay):
+        weights = {}
+
+        for move in GoBoardUtil.generate_legal_moves(state, toPlay):
+            weight = self.isPattern(state, move, toPlay)
+            weights[move] = weight
+
+        return weights
+
+    def getBestMove(self, state, toPlay):
+        weightDict = self.getPatternMoveWeights(state, toPlay)
+
+        # Generate a random move if we have no pattern matches
+        if (len(weightDict) == 0):
+            return GoBoardUtil.generate_random_move(state, toPlay, True)
+
+        weightSum = 0
+        probabilities = {}
+
+        for weight in weightDict:
+            weightSum += weightDict.get(weight)
+
+        # Calculate the probability of each move
+        prev = 0
+
+        for weight in weightDict:
+            probabilities[weight] = (weightDict.get(weight) / weightSum) + prev
+            prev = probabilities.get(weight)
+
+        #print("probabilities: ", probabilities)
+
+        uniform = random.uniform(0,1)
+        for move in probabilities:
+            if (uniform <= probabilities.get(move)):
+                return move
+
+    def run_sim(self, board, move, random, N):
+
+        cboard = board.copy()
+        cboard.play_move(move, cboard.current_player)
+        # Play through the rest of a game until it's over
+        for _ in range(1000):
+            color = cboard.current_player
+            # uniform random
+            if random:
+                move = GoBoardUtil.generate_random_move(cboard, color, False)
+            # pattern
+            else:
+                # Select a random pattern move based on its probability
+                move = self.getBestMove(cboard, color)
+
+            cboard.play_move(move, color)
+            if move == PASS:
+                break
+        winner = GoBoardUtil.opponent(color)
+        return winner
+
+    def simulateMove(self, cboard, move, color, random, N):
+        win = 0
+        for _ in range(N):
+            result = self.run_sim(cboard, move, random, N)
+            if result == color:
+                win += 1
+        return win
+
+    def get_move(self, board, color, round_robin, random, N):
+        ""
+        cboard = board.copy()
+        moves = GoBoardUtil.generate_legal_moves(cboard, cboard.current_player)
+
+        # UCB is selected, run it and find the best move
+        if not round_robin:
+            C = 0.4  # sqrt(2) is safe, this is more aggressive
+            best = runUcb(self, cboard, C, moves, color,N)
+            return best
+        else:
+            moveWins = []
+            for move in moves:
+                wins = self.simulateMove(cboard, move, color, random, N)
+                moveWins.append(wins)
+            #writeMoves(cboard, moves, moveWins, N)
+            return select_best_move(board, moves, moveWins)
+
+    def isPattern(self, board, point, toPlay):
+        #print("Found match for move: ", format_point(point_to_coord(point, self.board.size)))
+        # Get the 8 surrounding points in order from top-left to bottom-right
+        neighbors = board.surroundingPoints(point)
+        base10Value = 0
+        count = 0
+
+        for n in neighbors:
+            if (toPlay == WHITE and board.board[n] != BORDER and board.board[n] != EMPTY):
+                base10Value += pow(4, count) * GoBoardUtil.opponent(board.board[n])
+            else:
+                base10Value += pow(4, count) * board.board[n]
+            count += 1
+
+        weight = self.weights.get(base10Value)
+        # Moves with weights of 1 are illegal patterns
+        return weight
+
+
+
+
+def byPercentage(pair):
+    return pair[1]
+
+def writeMoves(board, moves, count, numSimulations):
+    """
+    Write simulation results for each move.
+    """
+    gtp_moves = []
+    for i in range(len(moves)):
+        if moves[i] != None:
+            x, y = point_to_coord(moves[i], board.size)
+            gtp_moves.append((format_point((x, y)),
+                              float(count[i])/float(numSimulations)))
+        else:
+            gtp_moves.append(('Pass',float(count[i])/float(numSimulations)))
+    sys.stderr.write("win rates: {}\n"
+                     .format(sorted(gtp_moves, key = byPercentage,
+                                    reverse = True)))
+
+def select_best_move(board, moves, moveWins):
+    """
+    Move select after the search.
+    """
+    max_child = np.argmax(moveWins)
+    return moves[max_child]
+
+sys.stderr.flush()
 
 def point_to_coord(point, boardsize):
     """
     Transform point given as board array index 
     to (row, col) coordinate representation.
+    Special case: PASS is not transformed
     """
-    NS = boardsize + 1
-    return divmod(point, NS)
+    if point == PASS:
+        return PASS
+    else:
+        NS = boardsize + 1
+        return divmod(point, NS)
 
 def format_point(move):
     """
@@ -386,6 +606,8 @@ def format_point(move):
     """
     column_letters = "ABCDEFGHJKLMNOPQRSTUVWXYZ"
     #column_letters = "abcdefghjklmnopqrstuvwxyz"
+    if move == PASS:
+        return "pass"
     row, col = move
     if not 0 <= row < MAXSIZE or not 0 <= col < MAXSIZE:
         raise ValueError
@@ -401,7 +623,7 @@ def move_to_coord(point_str, board_size):
         raise ValueError("board_size out of range")
     s = point_str.lower()
     if s == "pass":
-        raise ValueError("pass")
+        return PASS
     try:
         col_c = s[0]
         if (not "a" <= col_c <= "z") or col_c == "i":
@@ -424,4 +646,5 @@ def color_to_int(c):
     """convert character to the appropriate integer code"""
     color_to_int = {"b": BLACK , "w": WHITE, "e": EMPTY, 
                     "BORDER": BORDER}
-    return color_to_int[c] 
+    return color_to_int[c]
+

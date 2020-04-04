@@ -11,3 +11,8 @@ nogo4/__pycache__/board_util.cpython-37.pyc
 random_player/__pycache__/gtp_connection.cpython-37.pyc
 random_player/__pycache__/board_util.cpython-37.pyc
 random_player/__pycache__/simple_board.cpython-37.pyc
+nogo4/.DS_Store
+nogo4/__pycache__/board_util.cpython-35.pyc
+nogo4/__pycache__/gtp_connection.cpython-35.pyc
+nogo4/__pycache__/simple_board.cpython-35.pyc
+nogo4/__pycache__/ucb.cpython-35.pyc

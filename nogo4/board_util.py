@@ -7,6 +7,7 @@ import numpy as np
 
 """
 Encoding of colors on and off a Go board.
+FLODDFILL is used internally for a temporary marker
 """
 EMPTY = 0
 BLACK = 1
@@ -15,7 +16,11 @@ BORDER = 3
 
 def is_black_white(color):
     return color == BLACK or color == WHITE
-    
+"""
+Encoding of special pass move
+"""
+PASS = None
+
 """
 Encoding of "not a real point", used as a marker
 """
@@ -107,10 +112,10 @@ class GoBoardUtil(object):
         return legal_moves
 
     @staticmethod       
-    def generate_random_move(board, color):
+    def generate_random_move(board, color, use_eye_filter):
         """
         Generate a random move.
-        Return None if no move found
+        Return PASS if no move found
 
         Arguments
         ---------
@@ -122,9 +127,11 @@ class GoBoardUtil(object):
         moves = board.get_empty_points()
         np.random.shuffle(moves)
         for move in moves:
-            if board.is_legal(move, color):
+            legal = not (use_eye_filter and board.is_eye(move, color)) \
+                    and board.is_legal(move, color)
+            if legal:
                 return move
-        return None
+        return PASS
 
     @staticmethod
     def opponent(color):
