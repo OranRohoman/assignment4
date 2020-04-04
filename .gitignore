@@ -1,0 +1,13 @@
+
+nogo4/.idea/inspectionProfiles/profiles_settings.xml
+nogo4/.idea/misc.xml
+nogo4/.idea/modules.xml
+nogo4/.idea/nogo4.iml
+nogo4/.idea/vcs.xml
+nogo4/__pycache__/ucb.cpython-37.pyc
+nogo4/__pycache__/simple_board.cpython-37.pyc
+nogo4/__pycache__/gtp_connection.cpython-37.pyc
+nogo4/__pycache__/board_util.cpython-37.pyc
+random_player/__pycache__/gtp_connection.cpython-37.pyc
+random_player/__pycache__/board_util.cpython-37.pyc
+random_player/__pycache__/simple_board.cpython-37.pyc
