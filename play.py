@@ -2,8 +2,8 @@
 #/usr/local/bin/python3
 import pexpect
 
-player1='nogo4/nogo4.py'
-player2='flat_mc_player/nogo_flat_mc.py'
+player1='nogo4_simple/nogo4.py'
+player2='nogo4/nogo4.py'
 
 win1=0
 win2=0
@@ -67,7 +67,7 @@ def playSingleGame(alternative=False):
             playMove(p1,'w',move)
             playMove(ob,'w',move)
         sw=1-sw
-        #print(move)
+        print(move)
         ob.sendline('gogui-rules_final_result')
         ob.expect(['= black','= white','= unknown'])
         status=ob.after.decode("utf-8")[2:]

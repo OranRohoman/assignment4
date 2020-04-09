@@ -95,17 +95,5 @@ def writeMoves(board, moves, stats):
                                                reverse = True)))
     sys.stderr.flush()
 
-def runUcb(player, board, C, moves, toplay,N):
-    stats = [[0,0] for _ in moves]
-    num_simulation = len(moves) * N
-    for n in range(num_simulation):
-        moveIndex = findBest(stats, C, n)
-        result = player.run_sim(board, moves[moveIndex], toplay, N)
-        if result == toplay:
-            stats[moveIndex][0] += 1 # win
-        stats[moveIndex][1] += 1
-    bestIndex = bestArm(stats)
-    best = moves[bestIndex]
-    #writeMoves(board, moves, stats)
-    return best
+
 

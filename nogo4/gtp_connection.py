@@ -13,9 +13,10 @@ from board_util import GoBoardUtil, BLACK, WHITE, EMPTY, BORDER, PASS, \
 import numpy as np
 import re
 import sys
-from ucb import runUcb
+from ucb import findBest, bestArm
 import random
 import signal
+import math
 
 
 class GtpConnection():
@@ -38,6 +39,8 @@ class GtpConnection():
         self.random = False
         self.round_robin = False
         self.weights = self.parseWeights()
+        self.movesPlayed = 0
+        self.bestMove = None
         signal.signal(signal.SIGALRM, self.handler)
         self.commands = {
             "protocol_version": self.protocol_version_cmd,
@@ -275,14 +278,16 @@ class GtpConnection():
         try:
             signal.alarm(int(self.timelimit))
             self.sboard = self.board.copy()
+            if (self.movesPlayed > 25):
+                self.N = 40
+            else:
+                self.N = 10 + int(self.movesPlayed / 3)
+
             move = self.get_move(self.board, color, self.round_robin, self.random, self.N)
             self.board=self.sboard
             signal.alarm(0)
         except Exception as e:
-            # TODO fix this to give the best move we can find
-            self.respond("OUT OF TIME")
-            #move=self.go_engine.best_move
-            move = None
+            move=self.bestMove
 
         if move is None:
             self.respond("resign")
@@ -294,6 +299,7 @@ class GtpConnection():
         move_as_string = format_point(move_coord)
         if self.board.is_legal(move, color):
             self.board.play_move(move, color)
+            self.movesPlayed += 1
             self.respond(move_as_string)
         else:
             self.respond("resign")
@@ -521,15 +527,51 @@ class GtpConnection():
                 win += 1
         return win
 
-    def get_move(self, board, color, round_robin, random, N):
-        ""
-        cboard = board.copy()
-        moves = GoBoardUtil.generate_legal_moves(cboard, cboard.current_player)
+    def getOrderedMoves(self, state, moves):
+        # get a list of moves
+        highPriority = []
+        lowPriority = []
+        bestMoves = []
 
+        for i in moves:
+            # If this move takes away a legal move our opponent could make, it's a better one
+            #if (state.is_legal(i, GoBoardUtil.opponent(state.current_player))):
+            if (not state.is_eye(i, state.current_player)):
+                if (state.find_neighbor_of_color(i, state.current_player) is None):
+                    bestMoves.append(i)
+                else:
+                    highPriority.append(i)
+            else:
+                lowPriority.append(i)
+
+        return bestMoves + highPriority + lowPriority
+
+
+    def runUcb(self, board, C, moves, toplay, N):
+        stats = [[0, 0] for _ in moves]
+        num_simulation = len(moves) * N
+        for n in range(num_simulation):
+            moveIndex = findBest(stats, C, n)
+            # Keep track of the best move so far
+            self.bestMove = moves[moveIndex]
+            result = self.run_sim(board, moves[moveIndex], toplay, N)
+            if result == toplay:
+                stats[moveIndex][0] += 1  # win
+            stats[moveIndex][1] += 1
+        bestIndex = bestArm(stats)
+        best = moves[bestIndex]
+        # writeMoves(board, moves, stats)
+        return best
+
+
+    def get_move(self, cboard, color, round_robin, random, N):
+        ""
+        #moves = GoBoardUtil.generate_legal_moves(cboard, cboard.current_player)
+        moves = self.getOrderedMoves(cboard,GoBoardUtil.generate_legal_moves(cboard, cboard.current_player))
         # UCB is selected, run it and find the best move
         if not round_robin:
             C = 0.4  # sqrt(2) is safe, this is more aggressive
-            best = runUcb(self, cboard, C, moves, color,N)
+            best = self.runUcb(cboard, C, moves, color,N)
             return best
         else:
             moveWins = []

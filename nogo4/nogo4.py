@@ -3,14 +3,7 @@
 # Set the path to your python3 above
 
 from gtp_connection import GtpConnection
-from board_util import GoBoardUtil
-from board_util import GoBoardUtil, BLACK, WHITE, EMPTY, BORDER, PASS
-import numpy as np
-from gtp_connection import point_to_coord, format_point
 from simple_board import SimpleGoBoard
-from board_util import GoBoardUtil, EMPTY, PASS, BORDER
-from ucb import runUcb
-import sys
 
 
 
@@ -25,7 +18,7 @@ class Nogo():
         Passe/resigns only at the end of game.
 
         """
-        self.name = "NoGoAssignment2"
+        self.name = "NoGoAssignment4"
         self.version = 1.0
 
 
